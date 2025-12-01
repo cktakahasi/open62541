@@ -116,17 +116,41 @@ readGeneratorData(UA_Client *client) {
     }
     UA_Variant_clear(&value);
 
-    /* Read Running Hours */
+    /* Read Operating Time - Hours */
     retval = UA_Client_readValueAttribute(client,
-                                          UA_NODEID_STRING(1, "DieselGenerator.1.RunningHours"),
+                                          UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Hours"),
                                           &value);
+    UA_UInt32 hours = 0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT32])) {
-        UA_UInt32 runningHours = *(UA_UInt32 *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Running Hours: %u h", runningHours);
+        hours = *(UA_UInt32 *)value.data;
     }
     UA_Variant_clear(&value);
+
+    /* Read Operating Time - Minutes */
+    retval = UA_Client_readValueAttribute(client,
+                                          UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Minutes"),
+                                          &value);
+    UA_Byte minutes = 0;
+    if(retval == UA_STATUSCODE_GOOD &&
+       UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BYTE])) {
+        minutes = *(UA_Byte *)value.data;
+    }
+    UA_Variant_clear(&value);
+
+    /* Read Operating Time - Seconds */
+    retval = UA_Client_readValueAttribute(client,
+                                          UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Seconds"),
+                                          &value);
+    UA_Byte seconds = 0;
+    if(retval == UA_STATUSCODE_GOOD &&
+       UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BYTE])) {
+        seconds = *(UA_Byte *)value.data;
+    }
+    UA_Variant_clear(&value);
+
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                "Operating Time: %u:%02u:%02u", hours, minutes, seconds);
 
     /* Read Running Status */
     retval = UA_Client_readValueAttribute(client,

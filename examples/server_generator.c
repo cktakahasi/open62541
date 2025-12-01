@@ -104,7 +104,7 @@ main(void) {
                               UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                               attr, NULL, NULL);
 
-    /* Coolant Temperature (°C) */
+    /* Coolant Temperature (C) */
     UA_Double coolantTemp = 85.0;
     UA_Variant_setScalar(&attr.value, &coolantTemp, &UA_TYPES[UA_TYPES_DOUBLE]);
     attr.description = UA_LOCALIZEDTEXT("en-US", "Engine coolant temperature");
@@ -143,17 +143,58 @@ main(void) {
                               UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                               attr, NULL, NULL);
 
-    /* Running Hours */
-    UA_UInt32 runningHours = 12450;
-    UA_Variant_setScalar(&attr.value, &runningHours, &UA_TYPES[UA_TYPES_UINT32]);
-    attr.description = UA_LOCALIZEDTEXT("en-US", "Total running hours");
-    attr.displayName = UA_LOCALIZEDTEXT("en-US", "Running Hours");
+    /* Create Operating Time Object */
+    UA_ObjectAttributes timeOAttr = UA_ObjectAttributes_default;
+    timeOAttr.displayName = UA_LOCALIZEDTEXT("en-US", "Operating Time");
+    timeOAttr.description = UA_LOCALIZEDTEXT("en-US", "Total operating time");
+
+    UA_NodeId operatingTimeId = UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime");
+    UA_QualifiedName operatingTimeName = UA_QUALIFIEDNAME(1, "OperatingTime");
+
+    UA_Server_addObjectNode(server, operatingTimeId,
+                            generatorId, parentRef,
+                            operatingTimeName,
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE),
+                            timeOAttr, NULL, NULL);
+
+    /* Operating Time - Hours */
+    UA_UInt32 hours = 12450;
+    UA_Variant_setScalar(&attr.value, &hours, &UA_TYPES[UA_TYPES_UINT32]);
+    attr.description = UA_LOCALIZEDTEXT("en-US", "Operating hours");
+    attr.displayName = UA_LOCALIZEDTEXT("en-US", "Hours");
     attr.dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
 
     UA_Server_addVariableNode(server,
-                              UA_NODEID_STRING(1, "DieselGenerator.1.RunningHours"),
-                              generatorId, parentRef,
-                              UA_QUALIFIEDNAME(1, "RunningHours"),
+                              UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Hours"),
+                              operatingTimeId, parentRef,
+                              UA_QUALIFIEDNAME(1, "Hours"),
+                              UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+                              attr, NULL, NULL);
+
+    /* Operating Time - Minutes */
+    UA_Byte minutes = 30;
+    UA_Variant_setScalar(&attr.value, &minutes, &UA_TYPES[UA_TYPES_BYTE]);
+    attr.description = UA_LOCALIZEDTEXT("en-US", "Operating minutes");
+    attr.displayName = UA_LOCALIZEDTEXT("en-US", "Minutes");
+    attr.dataType = UA_TYPES[UA_TYPES_BYTE].typeId;
+
+    UA_Server_addVariableNode(server,
+                              UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Minutes"),
+                              operatingTimeId, parentRef,
+                              UA_QUALIFIEDNAME(1, "Minutes"),
+                              UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+                              attr, NULL, NULL);
+
+    /* Operating Time - Seconds */
+    UA_Byte seconds = 45;
+    UA_Variant_setScalar(&attr.value, &seconds, &UA_TYPES[UA_TYPES_BYTE]);
+    attr.description = UA_LOCALIZEDTEXT("en-US", "Operating seconds");
+    attr.displayName = UA_LOCALIZEDTEXT("en-US", "Seconds");
+
+    UA_Server_addVariableNode(server,
+                              UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Seconds"),
+                              operatingTimeId, parentRef,
+                              UA_QUALIFIEDNAME(1, "Seconds"),
                               UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                               attr, NULL, NULL);
 
