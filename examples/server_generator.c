@@ -8,6 +8,7 @@
 
 static volatile UA_Boolean running = true;
 static time_t startTime;
+static UA_Double currentRPM = 1800.0;
 
 static void
 stopHandler(int sign) {
@@ -46,8 +47,26 @@ updateOperatingTime(UA_Server *server) {
 }
 
 static void
+updateRPM(UA_Server *server) {
+    /* Increment RPM by 1 each second */
+    currentRPM += 1.0;
+    
+    /* Reset to 1800 when reaching 2000 */
+    if (currentRPM > 2000.0) {
+        currentRPM = 1800.0;
+    }
+
+    UA_Variant value;
+    UA_Variant_setScalar(&value, &currentRPM, &UA_TYPES[UA_TYPES_DOUBLE]);
+    UA_Server_writeValue(server,
+                        UA_NODEID_STRING(1, "DieselGenerator.1.EngineSpeed"),
+                        value);
+}
+
+static void
 updateOperatingTimeCallback(UA_Server *server, void *data) {
     updateOperatingTime(server);
+    updateRPM(server);
 }
 
 int
@@ -56,6 +75,7 @@ main(void) {
     signal(SIGTERM, stopHandler);
 
     startTime = time(NULL);
+    currentRPM = 1800.0;
 
     UA_Server *server = UA_Server_new();
     UA_ServerConfig_setDefault(UA_Server_getConfig(server));
@@ -118,8 +138,7 @@ main(void) {
                               attr, NULL, NULL);
 
     /* Engine Speed (RPM) */
-    UA_Double speed = 1800.0;
-    UA_Variant_setScalar(&attr.value, &speed, &UA_TYPES[UA_TYPES_DOUBLE]);
+    UA_Variant_setScalar(&attr.value, &currentRPM, &UA_TYPES[UA_TYPES_DOUBLE]);
     attr.description = UA_LOCALIZEDTEXT("en-US", "Engine rotational speed");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Engine Speed");
 
@@ -185,7 +204,7 @@ main(void) {
     /* Create Operating Time Object */
     UA_ObjectAttributes timeOAttr = UA_ObjectAttributes_default;
     timeOAttr.displayName = UA_LOCALIZEDTEXT("en-US", "Operating Time");
-    timeOAttr.description = UA_LOCALIZEDTEXT("en-US", "Total operating time");
+    timeOAttr.description = UA_LOCALIZEDTEXT("en-US", "Server uptime since start");
 
     UA_NodeId operatingTimeId = UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime");
     UA_QualifiedName operatingTimeName = UA_QUALIFIEDNAME(1, "OperatingTime");
@@ -199,7 +218,7 @@ main(void) {
     /* Operating Time - Hours */
     UA_UInt32 hours = 0;
     UA_Variant_setScalar(&attr.value, &hours, &UA_TYPES[UA_TYPES_UINT32]);
-    attr.description = UA_LOCALIZEDTEXT("en-US", "Operating hours");
+    attr.description = UA_LOCALIZEDTEXT("en-US", "Uptime hours");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Hours");
     attr.dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
 
@@ -213,7 +232,7 @@ main(void) {
     /* Operating Time - Minutes */
     UA_Byte minutes = 0;
     UA_Variant_setScalar(&attr.value, &minutes, &UA_TYPES[UA_TYPES_BYTE]);
-    attr.description = UA_LOCALIZEDTEXT("en-US", "Operating minutes");
+    attr.description = UA_LOCALIZEDTEXT("en-US", "Uptime minutes");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Minutes");
     attr.dataType = UA_TYPES[UA_TYPES_BYTE].typeId;
 
@@ -227,7 +246,7 @@ main(void) {
     /* Operating Time - Seconds */
     UA_Byte seconds = 0;
     UA_Variant_setScalar(&attr.value, &seconds, &UA_TYPES[UA_TYPES_BYTE]);
-    attr.description = UA_LOCALIZEDTEXT("en-US", "Operating seconds");
+    attr.description = UA_LOCALIZEDTEXT("en-US", "Uptime seconds");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Seconds");
 
     UA_Server_addVariableNode(server,
@@ -251,7 +270,7 @@ main(void) {
                               UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                               attr, NULL, NULL);
 
-    /* Add repeated callback to update operating time every second */
+    /* Add repeated callback to update operating time and RPM every second */
     UA_Server_addRepeatedCallback(server, updateOperatingTimeCallback, NULL, 1000, NULL);
 
     UA_StatusCode retval = UA_Server_run(server, &running);
