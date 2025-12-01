@@ -191,7 +191,7 @@ main(void) {
 
     while(running) {
         readGeneratorData(client);
-        sleep_ms(2000);
+        sleep_ms(1000);
     }
 
     UA_Client_disconnect(client);

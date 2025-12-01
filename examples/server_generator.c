@@ -4,8 +4,10 @@
 
 #include <signal.h>
 #include <stdlib.h>
+#include <time.h>
 
 static volatile UA_Boolean running = true;
+static time_t startTime;
 
 static void
 stopHandler(int sign) {
@@ -13,10 +15,47 @@ stopHandler(int sign) {
     running = false;
 }
 
+static void
+updateOperatingTime(UA_Server *server) {
+    time_t currentTime = time(NULL);
+    time_t elapsed = currentTime - startTime;
+
+    UA_UInt32 hours = (UA_UInt32)(elapsed / 3600);
+    UA_Byte minutes = (UA_Byte)((elapsed % 3600) / 60);
+    UA_Byte seconds = (UA_Byte)(elapsed % 60);
+
+    UA_Variant value;
+    
+    /* Update Hours */
+    UA_Variant_setScalar(&value, &hours, &UA_TYPES[UA_TYPES_UINT32]);
+    UA_Server_writeValue(server,
+                        UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Hours"),
+                        value);
+
+    /* Update Minutes */
+    UA_Variant_setScalar(&value, &minutes, &UA_TYPES[UA_TYPES_BYTE]);
+    UA_Server_writeValue(server,
+                        UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Minutes"),
+                        value);
+
+    /* Update Seconds */
+    UA_Variant_setScalar(&value, &seconds, &UA_TYPES[UA_TYPES_BYTE]);
+    UA_Server_writeValue(server,
+                        UA_NODEID_STRING(1, "DieselGenerator.1.OperatingTime.Seconds"),
+                        value);
+}
+
+static void
+updateOperatingTimeCallback(UA_Server *server, void *data) {
+    updateOperatingTime(server);
+}
+
 int
 main(void) {
     signal(SIGINT, stopHandler);
     signal(SIGTERM, stopHandler);
+
+    startTime = time(NULL);
 
     UA_Server *server = UA_Server_new();
     UA_ServerConfig_setDefault(UA_Server_getConfig(server));
@@ -158,7 +197,7 @@ main(void) {
                             timeOAttr, NULL, NULL);
 
     /* Operating Time - Hours */
-    UA_UInt32 hours = 12450;
+    UA_UInt32 hours = 0;
     UA_Variant_setScalar(&attr.value, &hours, &UA_TYPES[UA_TYPES_UINT32]);
     attr.description = UA_LOCALIZEDTEXT("en-US", "Operating hours");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Hours");
@@ -172,7 +211,7 @@ main(void) {
                               attr, NULL, NULL);
 
     /* Operating Time - Minutes */
-    UA_Byte minutes = 30;
+    UA_Byte minutes = 0;
     UA_Variant_setScalar(&attr.value, &minutes, &UA_TYPES[UA_TYPES_BYTE]);
     attr.description = UA_LOCALIZEDTEXT("en-US", "Operating minutes");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Minutes");
@@ -186,7 +225,7 @@ main(void) {
                               attr, NULL, NULL);
 
     /* Operating Time - Seconds */
-    UA_Byte seconds = 45;
+    UA_Byte seconds = 0;
     UA_Variant_setScalar(&attr.value, &seconds, &UA_TYPES[UA_TYPES_BYTE]);
     attr.description = UA_LOCALIZEDTEXT("en-US", "Operating seconds");
     attr.displayName = UA_LOCALIZEDTEXT("en-US", "Seconds");
@@ -211,6 +250,9 @@ main(void) {
                               UA_QUALIFIEDNAME(1, "Running"),
                               UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                               attr, NULL, NULL);
+
+    /* Add repeated callback to update operating time every second */
+    UA_Server_addRepeatedCallback(server, updateOperatingTimeCallback, NULL, 1000, NULL);
 
     UA_StatusCode retval = UA_Server_run(server, &running);
 
