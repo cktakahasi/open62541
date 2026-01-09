@@ -78,7 +78,21 @@ main(void) {
     currentRPM = 1800.0;
 
     UA_Server *server = UA_Server_new();
-    UA_ServerConfig_setDefault(UA_Server_getConfig(server));
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+    UA_ServerConfig_setDefault(config);
+
+    /* Enable subscriptions */
+    config->maxSubscriptions = 100;
+    config->maxSubscriptionsPerSession = 10;
+    config->publishingIntervalLimits.min = 100.0;
+    config->publishingIntervalLimits.max = 3600000.0;
+    config->lifeTimeCountLimits.min = 3;
+    config->lifeTimeCountLimits.max = 15000;
+    config->keepAliveCountLimits.min = 1;
+    config->keepAliveCountLimits.max = 100;
+    config->maxNotificationsPerPublish = 1000;
+    config->enableRetransmissionQueue = true;
+    config->maxRetransmissionQueueSize = 100;
 
     /* Create Diesel Generator Object */
     UA_ObjectAttributes oAttr = UA_ObjectAttributes_default;
@@ -272,6 +286,9 @@ main(void) {
 
     /* Add repeated callback to update operating time and RPM every second */
     UA_Server_addRepeatedCallback(server, updateOperatingTimeCallback, NULL, 1000, NULL);
+
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+               "OPC UA Server with subscriptions enabled. Press Ctrl-C to exit.");
 
     UA_StatusCode retval = UA_Server_run(server, &running);
 
