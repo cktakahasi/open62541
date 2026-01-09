@@ -115,6 +115,8 @@ add_example(custom_datatype_client custom_datatype/client_types_custom.c)
 add_example(custom_datatype_server custom_datatype/server_types_custom.c)
 add_example(server_generator server_generator.c)
 add_example(client_generator client_generator.c)
+add_example(server_flowpressure server_flowpressure.c)
+add_example(client_flowpressure client_flowpressure.c)
 
 if(WIN32)
     target_link_libraries(client_generator ws2_32)
