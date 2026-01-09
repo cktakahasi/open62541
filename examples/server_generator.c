@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#define OPCUA_TCP_PORT 4840
+
 static volatile UA_Boolean running = true;
 static time_t startTime;
 static UA_Double currentRPM = 1800.0;
@@ -79,7 +81,12 @@ main(void) {
 
     UA_Server *server = UA_Server_new();
     UA_ServerConfig *config = UA_Server_getConfig(server);
-    UA_ServerConfig_setDefault(config);
+
+    /* Fixed TCP port */
+    UA_ServerConfig_setMinimal(config, OPCUA_TCP_PORT, NULL);
+
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+            "OPC UA server listening on fixed TCP port %u", OPCUA_TCP_PORT);
 
     /* Enable subscriptions */
     config->maxSubscriptions = 100;
