@@ -118,6 +118,9 @@ add_example(client_generator client_generator.c)
 add_example(server_flowpressure server_flowpressure.c)
 add_example(client_flowpressure client_flowpressure.c)
 
+target_link_libraries(client_flowpressure open62541 m pthread)
+target_link_libraries(server_flowpressure open62541 m pthread)
+
 if(WIN32)
     target_link_libraries(client_generator ws2_32)
 else()
