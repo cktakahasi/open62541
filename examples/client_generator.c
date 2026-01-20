@@ -6,6 +6,7 @@
 
 #include <signal.h>
 #include <stdlib.h>
+#include <time.h>
 
 static volatile UA_Boolean running = true;
 
@@ -13,6 +14,22 @@ static void
 stopHandler(int sign) {
     UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "Received ctrl-c");
     running = false;
+}
+
+static UA_StatusCode
+writeActivePower(UA_Client *client, UA_Double powerValue) {
+    UA_Variant value;
+    UA_Variant_setScalar(&value, &powerValue, &UA_TYPES[UA_TYPES_DOUBLE]);
+    
+    UA_StatusCode retval = UA_Client_writeValueAttribute(client,
+                                                        UA_NODEID_STRING(1, "DieselGenerator.1.ActivePower"),
+                                                        &value);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                     "Failed to write ActivePower: %s", UA_StatusCode_name(retval));
+    }
+    
+    return retval;
 }
 
 static void
@@ -24,35 +41,10 @@ readGeneratorData(UA_Client *client) {
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.ActivePower"),
                                           &value);
+    UA_Double activePower = 0.0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double activePower = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Active Power: %.2f kW", activePower);
-    }
-    UA_Variant_clear(&value);
-
-    /* Read Voltage */
-    retval = UA_Client_readValueAttribute(client,
-                                          UA_NODEID_STRING(1, "DieselGenerator.1.Voltage"),
-                                          &value);
-    if(retval == UA_STATUSCODE_GOOD &&
-       UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double voltage = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Voltage: %.2f V", voltage);
-    }
-    UA_Variant_clear(&value);
-
-    /* Read Frequency */
-    retval = UA_Client_readValueAttribute(client,
-                                          UA_NODEID_STRING(1, "DieselGenerator.1.Frequency"),
-                                          &value);
-    if(retval == UA_STATUSCODE_GOOD &&
-       UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double frequency = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Frequency: %.2f Hz", frequency);
+        activePower = *(UA_Double *)value.data;
     }
     UA_Variant_clear(&value);
 
@@ -60,11 +52,32 @@ readGeneratorData(UA_Client *client) {
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.EngineSpeed"),
                                           &value);
+    UA_Double speed = 0.0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double speed = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Engine Speed: %.2f RPM", speed);
+        speed = *(UA_Double *)value.data;
+    }
+    UA_Variant_clear(&value);
+
+    /* Read Voltage */
+    retval = UA_Client_readValueAttribute(client,
+                                          UA_NODEID_STRING(1, "DieselGenerator.1.Voltage"),
+                                          &value);
+    UA_Double voltage = 0.0;
+    if(retval == UA_STATUSCODE_GOOD &&
+       UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
+        voltage = *(UA_Double *)value.data;
+    }
+    UA_Variant_clear(&value);
+
+    /* Read Frequency */
+    retval = UA_Client_readValueAttribute(client,
+                                          UA_NODEID_STRING(1, "DieselGenerator.1.Frequency"),
+                                          &value);
+    UA_Double frequency = 0.0;
+    if(retval == UA_STATUSCODE_GOOD &&
+       UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
+        frequency = *(UA_Double *)value.data;
     }
     UA_Variant_clear(&value);
 
@@ -72,11 +85,10 @@ readGeneratorData(UA_Client *client) {
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.OilPressure"),
                                           &value);
+    UA_Double oilPressure = 0.0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double oilPressure = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Oil Pressure: %.2f bar", oilPressure);
+        oilPressure = *(UA_Double *)value.data;
     }
     UA_Variant_clear(&value);
 
@@ -84,11 +96,10 @@ readGeneratorData(UA_Client *client) {
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.CoolantTemperature"),
                                           &value);
+    UA_Double coolantTemp = 0.0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double coolantTemp = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Coolant Temperature: %.2f C", coolantTemp);
+        coolantTemp = *(UA_Double *)value.data;
     }
     UA_Variant_clear(&value);
 
@@ -96,11 +107,10 @@ readGeneratorData(UA_Client *client) {
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.FuelLevel"),
                                           &value);
+    UA_Double fuelLevel = 0.0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double fuelLevel = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Fuel Level: %.2f %%", fuelLevel);
+        fuelLevel = *(UA_Double *)value.data;
     }
     UA_Variant_clear(&value);
 
@@ -108,11 +118,10 @@ readGeneratorData(UA_Client *client) {
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.BatteryVoltage"),
                                           &value);
+    UA_Double batteryVoltage = 0.0;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-        UA_Double batteryVoltage = *(UA_Double *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Battery Voltage: %.2f V", batteryVoltage);
+        batteryVoltage = *(UA_Double *)value.data;
     }
     UA_Variant_clear(&value);
 
@@ -149,22 +158,25 @@ readGeneratorData(UA_Client *client) {
     }
     UA_Variant_clear(&value);
 
-    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                "Operating Time: %u:%02u:%02u", hours, minutes, seconds);
-
     /* Read Running Status */
     retval = UA_Client_readValueAttribute(client,
                                           UA_NODEID_STRING(1, "DieselGenerator.1.Running"),
                                           &value);
+    UA_Boolean isRunning = false;
     if(retval == UA_STATUSCODE_GOOD &&
        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BOOLEAN])) {
-        UA_Boolean isRunning = *(UA_Boolean *)value.data;
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Running: %s", isRunning ? "true" : "false");
+        isRunning = *(UA_Boolean *)value.data;
     }
     UA_Variant_clear(&value);
 
-    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "---");
+    /* Display all values */
+    printf("Uptime: %02u:%02u:%02u | Running: %s | Power: %.1f kW | RPM: %.0f\n",
+           hours, minutes, seconds, isRunning ? "YES" : "NO", activePower, speed);
+    printf("Voltage: %.1f V | Frequency: %.1f Hz | OilPres: %.2f bar\n",
+           voltage, frequency, oilPressure);
+    printf("Coolant: %.1f°C | Fuel: %.1f%% | Battery: %.2f V\n",
+           coolantTemp, fuelLevel, batteryVoltage);
+    printf("================================================\n");
 }
 
 int
@@ -185,16 +197,71 @@ main(void) {
     }
 
     UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                "Connected to opc.tcp://localhost:4840");
+                "================================================");
     UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                "Reading Diesel Generator data...\n");
+                "Connected to Diesel Generator OPC UA Server");
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                "================================================\n");
+
+    time_t startTime = time(NULL);
+    int totalSeconds = 0;
 
     while(running) {
+        time_t currentTime = time(NULL);
+        totalSeconds = (int)(currentTime - startTime);
+
+        /* Simulate different load scenarios */
+        if(totalSeconds == 5) {
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        ">>> Setting ActivePower to 250 kW (at %d sec)", totalSeconds);
+            writeActivePower(client, 250.0);
+        }
+
+        if(totalSeconds == 10) {
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        ">>> Setting ActivePower to 750 kW (at %d sec)", totalSeconds);
+            writeActivePower(client, 750.0);
+        }
+
+        if(totalSeconds == 15) {
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        ">>> Setting ActivePower to 1250 kW (at %d sec)", totalSeconds);
+            writeActivePower(client, 1250.0);
+        }
+
+        if(totalSeconds == 20) {
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        ">>> Setting ActivePower to 500 kW (at %d sec)", totalSeconds);
+            writeActivePower(client, 500.0);
+        }
+
+        if(totalSeconds == 25) {
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        ">>> Setting ActivePower to 0 kW (Shutdown) (at %d sec)", totalSeconds);
+            writeActivePower(client, 0.0);
+        }
+
+        if(totalSeconds == 30) {
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        ">>> Restarting cycle\n");
+            startTime = time(NULL);
+            totalSeconds = 0;
+        }
+
         readGeneratorData(client);
         sleep_ms(1000);
     }
 
+    printf("\n");
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                "================================================");
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                "Disconnecting from server");
+
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                "Client stopped");
     return EXIT_SUCCESS;
 }
