@@ -30,6 +30,9 @@
 #define FLOW_RATE_MIN 0.0
 #define SINE_PERIOD 30.0
 #define RESERVOIR_DEPLETION_RATE 2.0  /* % per hour when pump is ON */
+#define PRESSURE_THRESHOLD_ALARM 35.0  /* bar */
+#define PRESSURE_THRESHOLD_CLOGGED 30.0  /* bar */
+#define TEMPERATURE_MAX 55.0  /* °C safety limit */
 
 /* Global state */
 static volatile UA_Boolean running = true;
@@ -93,115 +96,110 @@ writePumpEnable(UA_Server *server,
 /* Update all WIS variables based on current state and time */
 static void
 updateWISData(UA_Server *server) {
-    static time_t lastUpdateTime = 0;
-    time_t currentTime = time(NULL);
-    time_t elapsed = currentTime - startTime;
-
+    time_t elapsed = time(NULL) - startTime;
     UA_Variant value;
 
-    /* Check if pump state changed since last update */
+    /* Log pump state change */
     if(pumpEnable != lastPumpEnable) {
-        UA_UInt32 hours = elapsed / 3600;
-        UA_UInt32 minutes = (elapsed % 3600) / 60;
-        UA_UInt32 seconds = elapsed % 60;
-        
+        UA_UInt32 h = elapsed / 3600, m = (elapsed % 3600) / 60, s = elapsed % 60;
         UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
                     "================================================");
         UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "*** Pump state DETECTED in updateWISData ***");
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Uptime: %02u:%02u:%02u", hours, minutes, seconds);
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "Old state: %s", lastPumpEnable ? "ON" : "OFF");
-        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                    "New state: %s", pumpEnable ? "ON" : "OFF");
+                    "Pump state: %s -> %s (Uptime: %02u:%02u:%02u)",
+                    lastPumpEnable ? "ON" : "OFF",
+                    pumpEnable ? "ON" : "OFF", h, m, s);
         UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
                     "================================================");
-        
         lastPumpEnable = pumpEnable;
     }
 
-    /* Calculate FLOW RATE based on pump state */
+    /* Calculate flow rate with realistic variation */
     UA_Double flowRate = FLOW_RATE_MIN;
     if(pumpEnable) {
-        flowRate = (FLOW_RATE_MAX / 2.0) + 
-                   (FLOW_RATE_MAX / 2.0) * sin(2.0 * M_PI * (double)elapsed / SINE_PERIOD);
+        /* Sinusoidal flow variation (represents system cycling) */
+        flowRate = (FLOW_RATE_MAX / 2.0) * (1.0 + sin(2.0 * M_PI * elapsed / SINE_PERIOD));
         if(flowRate < FLOW_RATE_MIN) flowRate = FLOW_RATE_MIN;
     }
+
+    /* Pressure depends on flow rate and system resistance */
+    UA_Double pressure = 10.0 + (pumpEnable ? flowRate / 10.0 : 0.0);
     
-    UA_Variant_setScalar(&value, &flowRate, &UA_TYPES[UA_TYPES_DOUBLE]);
-    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.WaterFlow"), value);
-
-    /* PRESSURE: only when pump is ON */
-    UA_Double pressure = 10.0;
-    if(pumpEnable) {
-        pressure = 10.0 + (flowRate / 10.0);
-    }
-    UA_Variant_setScalar(&value, &pressure, &UA_TYPES[UA_TYPES_DOUBLE]);
-    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.WaterPressure"), value);
-
-    /* TEMPERATURE: only when pump is ON */
+    /* Temperature correlates with flow and pressure (friction heating) */
     UA_Double temperature = 40.0;
     if(pumpEnable) {
-        temperature = 40.0 + (flowRate / 20.0);
+        temperature = 40.0 + (flowRate / 20.0) + (pressure / 10.0) * 0.5;
+        if(temperature > TEMPERATURE_MAX) temperature = TEMPERATURE_MAX;
     }
-    UA_Variant_setScalar(&value, &temperature, &UA_TYPES[UA_TYPES_DOUBLE]);
-    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.SystemTemperature"), value);
-
-    /* INJECTION RATE: 90% of flow rate, ZERO when pump is OFF */
-    UA_Double injectionRate = 0.0;
-    if(pumpEnable) {
-        injectionRate = flowRate * 0.9;
-    }
-    UA_Variant_setScalar(&value, &injectionRate, &UA_TYPES[UA_TYPES_DOUBLE]);
-    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.InjectionRate"), value);
-
-    /* PUMP RUNNING: TRUE only when pump is ON and flow > threshold */
+    
+    /* Injection rate: 90% efficiency, proportional to flow */
+    UA_Double injectionRate = pumpEnable ? flowRate * 0.9 : 0.0;
+    
+    /* Pump running: TRUE only if pump enabled AND flow exceeds minimum */
     UA_Boolean pumpRunning = pumpEnable && (flowRate > 5.0);
-    UA_Variant_setScalar(&value, &pumpRunning, &UA_TYPES[UA_TYPES_BOOLEAN]);
-    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.PumpRunning"), value);
-
-    /* RESERVOIR LEVEL: decreases faster when pump is ON 
-     * Depletion rate: RESERVOIR_DEPLETION_RATE % per hour
-     * Start at 100%, goes to 0% 
-     */
+    
+    /* Reservoir level: depletes only during pump operation */
     UA_Double reservoirLevel = 100.0;
     if(pumpEnable) {
-        /* Calculate depletion: (elapsed_time_in_hours) * DEPLETION_RATE */
         double elapsedHours = (double)elapsed / 3600.0;
         reservoirLevel = 100.0 - (elapsedHours * RESERVOIR_DEPLETION_RATE);
         if(reservoirLevel < 0.0) reservoirLevel = 0.0;
-    } else {
-        /* When pump is OFF, reservoir stays at 100% */
-        reservoirLevel = 100.0;
+        
+        /* Pump stops if reservoir empty (safety feature) */
+        if(reservoirLevel <= 0.0) {
+            pumpEnable = false;
+            pumpRunning = false;
+            UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                        "*** ALARM: Reservoir empty - pump disabled ***");
+        }
     }
+    
+    /* Filter status depends on pressure and flow accumulation */
+    UA_Byte filterStatus = 0;  /* Clean by default */
+    if(pumpEnable) {
+        if(pressure > PRESSURE_THRESHOLD_CLOGGED) {
+            filterStatus = 2;  /* Clogged */
+            if(pressure > PRESSURE_THRESHOLD_ALARM) {
+                UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                            "*** WARNING: High pressure %.2f bar - filter may be clogged ***", pressure);
+            }
+        } else if(pressure > 15.0) {
+            filterStatus = 1;  /* Normal */
+        }
+    }
+
+    /* Write all calculated values to OPC UA */
+    UA_Variant_setScalar(&value, &flowRate, &UA_TYPES[UA_TYPES_DOUBLE]);
+    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.WaterFlow"), value);
+
+    UA_Variant_setScalar(&value, &pressure, &UA_TYPES[UA_TYPES_DOUBLE]);
+    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.WaterPressure"), value);
+
+    UA_Variant_setScalar(&value, &temperature, &UA_TYPES[UA_TYPES_DOUBLE]);
+    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.SystemTemperature"), value);
+
+    UA_Variant_setScalar(&value, &injectionRate, &UA_TYPES[UA_TYPES_DOUBLE]);
+    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.InjectionRate"), value);
+
+    UA_Variant_setScalar(&value, &pumpRunning, &UA_TYPES[UA_TYPES_BOOLEAN]);
+    UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.PumpRunning"), value);
+
     UA_Variant_setScalar(&value, &reservoirLevel, &UA_TYPES[UA_TYPES_DOUBLE]);
     UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.ReservoirLevel"), value);
 
-    /* FILTER STATUS: depends on pressure (only changes when pump ON) */
-    UA_Byte filterStatus = 1;  /* Normal */
-    if(pumpEnable) {
-        if(pressure > 30.0) {
-            filterStatus = 2;  /* Clogged */
-        } else if(pressure < 12.0) {
-            filterStatus = 0;  /* Clean */
-        }
-    } else {
-        filterStatus = 0;  /* Clean when pump is OFF */
-    }
     UA_Variant_setScalar(&value, &filterStatus, &UA_TYPES[UA_TYPES_BYTE]);
     UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.FilterStatus"), value);
 
-    /* OPERATING TIME: always counts */
-    UA_UInt32 hours = (UA_UInt32)(elapsed / 3600);
+    /* Operating time always advances */
+    UA_UInt32 hours = elapsed / 3600;
+    UA_Byte minutes = (elapsed % 3600) / 60;
+    UA_Byte seconds = elapsed % 60;
+    
     UA_Variant_setScalar(&value, &hours, &UA_TYPES[UA_TYPES_UINT32]);
     UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.OperatingTime.Hours"), value);
 
-    UA_Byte minutes = (UA_Byte)((elapsed % 3600) / 60);
     UA_Variant_setScalar(&value, &minutes, &UA_TYPES[UA_TYPES_BYTE]);
     UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.OperatingTime.Minutes"), value);
 
-    UA_Byte seconds = (UA_Byte)(elapsed % 60);
     UA_Variant_setScalar(&value, &seconds, &UA_TYPES[UA_TYPES_BYTE]);
     UA_Server_writeValue(server, UA_NODEID_STRING(1, (char*)"WaterInjectionSystem.1.OperatingTime.Seconds"), value);
 }
@@ -288,17 +286,25 @@ addWISVariables(UA_Server *server) {
     
     for(int i = 0; i < 5; i++) {
         varAttr = UA_VariableAttributes_default;
-        varAttr.displayName = UA_LOCALIZEDTEXT("en-US", (char*)doubleVars[i].displayName);
+        
+        char displayName[64];
+        strncpy(displayName, doubleVars[i].displayName, sizeof(displayName) - 1);
+        displayName[sizeof(displayName) - 1] = '\0';
+        
+        varAttr.displayName = UA_LOCALIZEDTEXT("en-US", displayName);
         varAttr.accessLevel = UA_ACCESSLEVELMASK_READ;
         UA_Variant_setScalar(&varAttr.value, &doubleValue, &UA_TYPES[UA_TYPES_DOUBLE]);
         
         char nodeId[64];
         snprintf(nodeId, sizeof(nodeId), "WaterInjectionSystem.1.%s", doubleVars[i].nodeId);
         
+        char qualifiedName[64];
+        snprintf(qualifiedName, sizeof(qualifiedName), "%s", doubleVars[i].nodeId);
+        
         retval |= UA_Server_addVariableNode(server, UA_NODEID_STRING(1, nodeId),
                                            UA_NODEID_STRING(1, "WaterInjectionSystem.1"),
                                            UA_NODEID_NUMERIC(0, UA_NS0ID_HASCOMPONENT),
-                                           UA_QUALIFIEDNAME(1, (char*)doubleVars[i].nodeId),
+                                           UA_QUALIFIEDNAME(1, qualifiedName),
                                            UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                                            varAttr, NULL, NULL);
     }
